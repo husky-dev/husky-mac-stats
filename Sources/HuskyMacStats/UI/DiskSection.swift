@@ -1,13 +1,13 @@
 import SwiftUI
 
-/// Hover content for the disk widget: capacity bar plus total / used / free.
-struct DiskPopoverView: View {
+/// Popover section for the disk widget: capacity bar plus total / used / free.
+struct DiskSection: View {
     @ObservedObject var store: StatsStore
 
     var body: some View {
         let usage = store.disk
 
-        PopoverFrame(title: usage.volumeName) {
+        PopoverSection(title: usage.volumeName) {
             CapacityBar(fraction: usage.fractionUsed)
 
             VStack(spacing: 4) {

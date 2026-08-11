@@ -75,8 +75,9 @@ struct CapacityBar: View {
     }
 }
 
-/// Shared chrome: heading, then whatever the individual popover puts below it.
-struct PopoverFrame<Content: View>: View {
+/// One widget's block inside the popover: heading, then whatever that widget puts below it.
+/// Deliberately carries no padding or width — sections stack, so the panel owns both.
+struct PopoverSection<Content: View>: View {
     let title: String
     @ViewBuilder let content: Content
 
@@ -87,7 +88,16 @@ struct PopoverFrame<Content: View>: View {
 
             content
         }
-        .padding(PopoverStyle.padding)
-        .frame(width: PopoverStyle.width)
+    }
+}
+
+/// The popover's outer chrome, applied once around the whole stack of sections.
+struct PopoverPanel<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        content
+            .padding(PopoverStyle.padding)
+            .frame(width: PopoverStyle.width)
     }
 }

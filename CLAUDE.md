@@ -65,8 +65,11 @@ the *visible widget list*, not of `coreCount` alone: `statusItemWidth(_:coreCoun
 `range(of:in:coreCount:)` and the `widget(at:in:coreCount:)` hit-test all derive from the single
 `width(of:coreCount:)` switch, so total width and hit-test ranges cannot drift apart. **Register a new
 widget in the `Widget` enum and in `width(of:)` and everything else follows**; hardcoding a width
-anywhere else will open the popover over the wrong glyph. Bar widths are derived from `coreCount`,
-never hardcoded.
+anywhere else will misplace the glyphs against the item's own bounds. Bar widths are derived from
+`coreCount`, never hardcoded.
+
+The hover popover no longer depends on *which* widget the pointer is over — it shows every visible
+widget — so `StatusItemController` uses `widget(at:in:coreCount:)` only as an inside/outside test.
 
 Network and memory are the exceptions to the glyph-plus-bars shape: both draw two stacked text rows
 (`↑` rate over `↓` rate; `MEM` over a percentage) and take their widths from `BarStyle.networkWidth`
@@ -105,6 +108,9 @@ These look like odd choices and are not:
   app is almost never frontmost.
 - **The popover is `.applicationDefined`, not `.transient`.** Transient dismissal is unreliable for a
   background agent; hover exit closes it on a 150 ms debounce instead.
+- **The popover's content view controller is cached and cleared on a settings change.** Its sections
+  are `settings.visible`, which `NSHostingController` captured by value at build time, so a toggle or
+  reorder has to invalidate it — `resizeStatusItem()` does, rebuilding immediately if it is on screen.
 - **The `Timer` runs in `.common` mode** so the widget stays live while a menu tracking loop is up.
 - **Menu bar colours come from `NSColor.labelColor` / `.tertiaryLabelColor`**, which resolve against
   the menu bar's own appearance. Hardcoded SwiftUI colours break in light mode; the load ramp
@@ -115,7 +121,8 @@ four leftmost bars are E-cores.
 
 Adding a metric: sampler returning a `Sendable` value type in `Metrics/`, publish from `StatsStore`,
 add a case to `Widget` (title, symbol, summary) and a width to `BarStyle.width(of:coreCount:)`, a view
-in `UI/` wired into `MenuBarView.view(for:)`, and a hover panel in `WidgetPopoverView`. Existing users
+in `UI/` wired into `MenuBarView.view(for:)`, and a `PopoverSection` wired into
+`StatsPopoverView.section(for:)`. Existing users
 get the new widget enabled by default — `SettingsStore` appends cases missing from stored preferences
 rather than discarding the arrangement.
 

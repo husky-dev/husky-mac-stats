@@ -15,8 +15,6 @@ final class StatusItemController: NSObject {
     private var hoverView: HoverTrackingView?
     private var closeWorkItem: DispatchWorkItem?
     private var hoveredWidget: Widget?
-    /// Which widget the popover is currently built for, so it is only rebuilt when that changes.
-    private var popoverWidget: Widget?
     private var cancellables: Set<AnyCancellable> = []
 
     init(store: StatsStore, settings: SettingsStore) {
@@ -85,7 +83,13 @@ final class StatusItemController: NSObject {
         let visible = settings.visible
         statusItem.length = BarStyle.statusItemWidth(visible, coreCount: store.coreCount)
 
-        // A widget can disappear from under the pointer; don't leave its popover on screen.
+        // The popover's sections are the visible widgets, so the cached content is now stale.
+        popover.contentViewController = nil
+        if popover.isShown {
+            buildPopoverContent()
+        }
+
+        // A widget can disappear from under the pointer; don't leave the popover on screen.
         if let hoveredWidget, !visible.contains(hoveredWidget) {
             self.hoveredWidget = nil
             popover.performClose(nil)
@@ -102,31 +106,34 @@ final class StatusItemController: NSObject {
         guard widget != hoveredWidget else { return }
         hoveredWidget = widget
 
-        if let widget {
-            showPopover(for: widget)
+        if widget != nil {
+            showPopover()
         } else {
             scheduleClose()
         }
     }
 
-    private func showPopover(for widget: Widget) {
+    private func showPopover() {
         closeWorkItem?.cancel()
         closeWorkItem = nil
 
         guard let button = statusItem.button else { return }
 
-        // Moving between widgets keeps the popover up but swaps its contents.
-        if popoverWidget != widget {
-            let hosting = NSHostingController(
-                rootView: WidgetPopoverView(widget: widget, store: store)
-            )
-            popover.contentViewController = hosting
-            popover.contentSize = hosting.view.fittingSize
-            popoverWidget = widget
-        }
+        buildPopoverContent()
 
         guard !popover.isShown else { return }
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+    }
+
+    /// The panel covers every visible widget, so it only has to be rebuilt when that set changes.
+    private func buildPopoverContent() {
+        guard popover.contentViewController == nil else { return }
+
+        let hosting = NSHostingController(
+            rootView: StatsPopoverView(widgets: settings.visible, store: store)
+        )
+        popover.contentViewController = hosting
+        popover.contentSize = hosting.view.fittingSize
     }
 
     /// Debounced so a pointer jittering across a widget's edge doesn't flicker the popover.
@@ -150,8 +157,8 @@ final class StatusItemController: NSObject {
             showMenu()
         } else if popover.isShown {
             popover.performClose(nil)
-        } else if let widget = hoveredWidget ?? settings.visible.first {
-            showPopover(for: widget)
+        } else {
+            showPopover()
         }
     }
 

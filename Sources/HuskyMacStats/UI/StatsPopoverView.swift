@@ -1,29 +1,45 @@
 import SwiftUI
 
-/// Routes a hovered widget to its own hover panel.
-struct WidgetPopoverView: View {
-    let widget: Widget
+/// The hover popover: one section per visible widget, stacked in the status item's own order.
+///
+/// There is a single panel rather than one per widget — reading two metrics shouldn't mean aiming at
+/// two glyphs — so hovering anywhere on the status item shows all of this.
+struct StatsPopoverView: View {
+    let widgets: [Widget]
     @ObservedObject var store: StatsStore
 
     var body: some View {
+        PopoverPanel {
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(Array(widgets.enumerated()), id: \.element) { index, widget in
+                    if index > 0 { Divider() }
+                    section(for: widget)
+                }
+            }
+        }
+    }
+
+    /// A new widget registers its popover content here, and nowhere else.
+    @ViewBuilder
+    private func section(for widget: Widget) -> some View {
         switch widget {
-        case .cpu: CPUPopoverView(store: store)
-        case .memory: MemoryPopoverView(store: store)
-        case .network: NetworkPopoverView(store: store)
-        case .disk: DiskPopoverView(store: store)
+        case .cpu: CPUSection(store: store)
+        case .memory: MemorySection(store: store)
+        case .network: NetworkSection(store: store)
+        case .disk: DiskSection(store: store)
         }
     }
 }
 
 /// Per-core load, plus the average across all cores.
-struct CPUPopoverView: View {
+struct CPUSection: View {
     @ObservedObject var store: StatsStore
 
     var body: some View {
         let loads = store.cpuLoads
         let average = loads.isEmpty ? 0 : loads.reduce(0, +) / Double(loads.count)
 
-        PopoverFrame(title: "CPU") {
+        PopoverSection(title: "CPU") {
             CapacityBar(fraction: average)
 
             Text("\(PopoverStyle.percent(average)) average across \(loads.count) cores")
@@ -52,13 +68,13 @@ struct CPUPopoverView: View {
 }
 
 /// Physical memory in use, matching Activity Monitor's "Memory Used".
-struct MemoryPopoverView: View {
+struct MemorySection: View {
     @ObservedObject var store: StatsStore
 
     var body: some View {
         let usage = store.memory
 
-        PopoverFrame(title: "Memory") {
+        PopoverSection(title: "Memory") {
             CapacityBar(fraction: usage.fractionUsed)
 
             VStack(spacing: 4) {
@@ -75,13 +91,13 @@ struct MemoryPopoverView: View {
 }
 
 /// Current throughput across all non-loopback interfaces.
-struct NetworkPopoverView: View {
+struct NetworkSection: View {
     @ObservedObject var store: StatsStore
 
     var body: some View {
         let throughput = store.network
 
-        PopoverFrame(title: "Network") {
+        PopoverSection(title: "Network") {
             VStack(spacing: 4) {
                 StatRow(
                     label: "Download",
