@@ -121,3 +121,6 @@ reason the login-item alert does.
 The global TypeScript/React rules in `~/.claude/rules/` do not apply to this repository — it is pure
 Swift. Follow ordinary Swift conventions (lowerCamelCase constants, not the PascalCase rule from the
 TS guide).
+
+Commit straight to `main`. This is a single-developer repository with no review step, so there is no
+need to create a branch per feature — do not branch unless explicitly asked.
