@@ -6,7 +6,7 @@ struct CPUBarsView: View {
 
     var body: some View {
         HStack(spacing: BarStyle.iconGap) {
-            Image(systemName: "cpu")
+            Image(systemName: Widget.cpu.symbolName)
                 .font(.system(size: 11, weight: .regular))
                 .foregroundStyle(BarStyle.glyphColor)
                 .frame(width: BarStyle.iconWidth)
@@ -18,7 +18,7 @@ struct CPUBarsView: View {
             }
         }
         .frame(
-            width: BarStyle.cpuWidth(coreCount: loads.count),
+            width: BarStyle.width(of: .cpu, coreCount: loads.count),
             height: BarStyle.barHeight
         )
     }

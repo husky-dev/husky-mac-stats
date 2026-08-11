@@ -1,31 +1,41 @@
 import AppKit
+import Combine
 import SwiftUI
 
 /// Owns the menu bar item: its SwiftUI content, the hover popover, and the right-click menu.
 @MainActor
 final class StatusItemController: NSObject {
+    /// Invoked when the user picks Settings from the right-click menu.
+    var onOpenSettings: (() -> Void)?
+
     private let store: StatsStore
+    private let settings: SettingsStore
     private let statusItem: NSStatusItem
     private let popover = NSPopover()
     private var hoverView: HoverTrackingView?
     private var closeWorkItem: DispatchWorkItem?
-    private var isOverDisk = false
+    private var hoveredWidget: Widget?
+    /// Which widget the popover is currently built for, so it is only rebuilt when that changes.
+    private var popoverWidget: Widget?
+    private var cancellables: Set<AnyCancellable> = []
 
-    init(store: StatsStore) {
+    init(store: StatsStore, settings: SettingsStore) {
         self.store = store
+        self.settings = settings
         statusItem = NSStatusBar.system.statusItem(
-            withLength: BarStyle.statusItemWidth(coreCount: store.coreCount)
+            withLength: BarStyle.statusItemWidth(settings.visible, coreCount: store.coreCount)
         )
         super.init()
 
         configureButton()
         configurePopover()
+        observeSettings()
     }
 
     private func configureButton() {
         guard let button = statusItem.button else { return }
 
-        let hosting = NSHostingView(rootView: MenuBarView(store: store))
+        let hosting = NSHostingView(rootView: MenuBarView(store: store, settings: settings))
         hosting.translatesAutoresizingMaskIntoConstraints = false
         button.addSubview(hosting)
 
@@ -54,48 +64,77 @@ final class StatusItemController: NSObject {
     }
 
     private func configurePopover() {
-        popover.contentSize = NSSize(width: 220, height: 150)
-        popover.contentViewController = NSHostingController(rootView: DiskPopoverView(store: store))
         popover.animates = false
         // Not `.transient`: the app is usually inactive, and transient dismissal behaves
         // unpredictably then. Hover exit closes it explicitly instead.
         popover.behavior = .applicationDefined
     }
 
+    /// The status item's width is fixed at creation, so toggling or reordering widgets has to
+    /// resize it explicitly. `MenuBarView` re-renders on its own through `@ObservedObject`.
+    private func observeSettings() {
+        settings.objectWillChange
+            .receive(on: RunLoop.main)  // fires *before* the change lands; read it on the next turn
+            .sink { [weak self] _ in
+                self?.resizeStatusItem()
+            }
+            .store(in: &cancellables)
+    }
+
+    private func resizeStatusItem() {
+        let visible = settings.visible
+        statusItem.length = BarStyle.statusItemWidth(visible, coreCount: store.coreCount)
+
+        // A widget can disappear from under the pointer; don't leave its popover on screen.
+        if let hoveredWidget, !visible.contains(hoveredWidget) {
+            self.hoveredWidget = nil
+            popover.performClose(nil)
+        }
+    }
+
     // MARK: - Hover
 
     private func handleHover(at point: CGPoint?) {
-        guard let point else {
-            isOverDisk = false
-            scheduleClose()
-            return
+        let widget = point.flatMap {
+            BarStyle.widget(at: $0.x, in: settings.visible, coreCount: store.coreCount)
         }
 
-        let overDisk = BarStyle.diskRange(coreCount: store.coreCount).contains(point.x)
-        guard overDisk != isOverDisk else { return }
-        isOverDisk = overDisk
+        guard widget != hoveredWidget else { return }
+        hoveredWidget = widget
 
-        if overDisk {
-            showPopover()
+        if let widget {
+            showPopover(for: widget)
         } else {
             scheduleClose()
         }
     }
 
-    private func showPopover() {
+    private func showPopover(for widget: Widget) {
         closeWorkItem?.cancel()
         closeWorkItem = nil
 
-        guard let button = statusItem.button, !popover.isShown else { return }
+        guard let button = statusItem.button else { return }
+
+        // Moving between widgets keeps the popover up but swaps its contents.
+        if popoverWidget != widget {
+            let hosting = NSHostingController(
+                rootView: WidgetPopoverView(widget: widget, store: store)
+            )
+            popover.contentViewController = hosting
+            popover.contentSize = hosting.view.fittingSize
+            popoverWidget = widget
+        }
+
+        guard !popover.isShown else { return }
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
     }
 
-    /// Debounced so a pointer jittering across the widget's edge doesn't flicker the popover.
+    /// Debounced so a pointer jittering across a widget's edge doesn't flicker the popover.
     private func scheduleClose() {
         closeWorkItem?.cancel()
 
         let work = DispatchWorkItem { [weak self] in
-            guard let self, !self.isOverDisk else { return }
+            guard let self, self.hoveredWidget == nil else { return }
             self.popover.performClose(nil)
         }
         closeWorkItem = work
@@ -109,25 +148,23 @@ final class StatusItemController: NSObject {
 
         if event.type == .rightMouseUp || event.modifierFlags.contains(.control) {
             showMenu()
-        } else {
-            popover.isShown ? popover.performClose(nil) : showPopover()
+        } else if popover.isShown {
+            popover.performClose(nil)
+        } else if let widget = hoveredWidget ?? settings.visible.first {
+            showPopover(for: widget)
         }
     }
 
     private func showMenu() {
         let menu = NSMenu()
 
-        let launchItem = NSMenuItem(
-            title: "Launch at Login",
-            action: #selector(toggleLaunchAtLogin),
-            keyEquivalent: ""
+        let settingsItem = NSMenuItem(
+            title: "Settings…",
+            action: #selector(openSettings),
+            keyEquivalent: ","
         )
-        launchItem.target = self
-        launchItem.state = LaunchAtLogin.isEnabled ? .on : .off
-        if LaunchAtLogin.needsApproval {
-            launchItem.title = "Launch at Login (approve in System Settings)"
-        }
-        menu.addItem(launchItem)
+        settingsItem.target = self
+        menu.addItem(settingsItem)
         menu.addItem(.separator())
 
         menu.addItem(
@@ -142,20 +179,10 @@ final class StatusItemController: NSObject {
         statusItem.menu = nil
     }
 
-    @objc private func toggleLaunchAtLogin() {
-        guard let error = LaunchAtLogin.setEnabled(!LaunchAtLogin.isEnabled) else { return }
-
-        let alert = NSAlert()
-        alert.messageText = "Couldn't change the login item"
-        alert.informativeText = """
-            \(error.localizedDescription)
-
-            macOS only launches login items from a stable, trusted location. Move \
-            HuskyMacStats.app into /Applications and try again.
-            """
-        alert.alertStyle = .warning
-        // A background agent has no key window to attach a sheet to.
-        NSApp.activate(ignoringOtherApps: true)
-        alert.runModal()
+    @objc private func openSettings() {
+        // The popover would otherwise hang over the window that is about to take focus.
+        hoveredWidget = nil
+        popover.performClose(nil)
+        onOpenSettings?()
     }
 }

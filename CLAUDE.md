@@ -53,12 +53,24 @@ item via `NSHostingView` and owns the hover popover and right-click menu.
 CPU sampling deliberately stays on the main actor — it is a microsecond syscall, and keeping it there
 avoids making `CPUSampler`'s tick history cross-actor state. Filesystem work goes to a detached task.
 
+Which widgets appear, and in what order, is user configuration: `SettingsStore` (`Settings/`) persists
+an order plus an enabled set to `UserDefaults`, and `settings.visible` is the status item's
+composition. It refuses to disable the last enabled widget — a zero-width status item cannot be
+right-clicked, which would strand the user with no way back into Settings.
+
 ### BarStyle is the layout source of truth
 
-`UI/BarStyle.swift` holds all geometry, and the hover hit-test depends on it: `diskRange` computes
-where the disk widget sits by summing the widths to its left. **Adding or resizing any widget means
-updating `statusItemWidth` and the range functions together**, or hovering will open the popover over
-the wrong glyph. Widths are derived from `coreCount`, never hardcoded.
+`UI/BarStyle.swift` holds all geometry, and the hover hit-test depends on it. Layout is a function of
+the *visible widget list*, not of `coreCount` alone: `statusItemWidth(_:coreCount:)`,
+`range(of:in:coreCount:)` and the `widget(at:in:coreCount:)` hit-test all derive from the single
+`width(of:coreCount:)` switch, so total width and hit-test ranges cannot drift apart. **Register a new
+widget in the `Widget` enum and in `width(of:)` and everything else follows**; hardcoding a width
+anywhere else will open the popover over the wrong glyph. Widths are derived from `coreCount`, never
+hardcoded.
+
+Because the status item's length is fixed at creation, `StatusItemController` subscribes to
+`SettingsStore` and reassigns `statusItem.length` whenever the user toggles or reorders — the SwiftUI
+content re-renders on its own, but the item would keep its old width.
 
 ### Constraints worth knowing before you "fix" something
 
@@ -67,6 +79,15 @@ These look like odd choices and are not:
 - **`CPUSampler` must `vm_deallocate`.** `host_processor_info` maps a fresh region per call; skipping
   it leaks a page per second. The first sample returns zeros on purpose — the counters are cumulative
   since boot, so one reading alone is a lifetime average.
+- **`NetworkSampler` must `freeifaddrs`.** `getifaddrs` heap-allocates the interface list on every
+  call, and it runs every second. It sums only `AF_LINK` entries — the `AF_INET`/`AF_INET6` aliases
+  for the same interface would double-count — and skips loopback. Like CPU, its first sample is zero
+  because the byte counters are cumulative since boot.
+- **`MemorySampler` must *not* `vm_deallocate`.** `host_statistics64` fills a caller-owned struct;
+  there is no mapped region, unlike `host_processor_info`. It also asks the kernel for the page size
+  rather than reading `vm_kernel_page_size`, which Swift 6 rejects as shared mutable state. "Used" is
+  active + wired + compressed; inactive pages are evictable and counting them would peg the bar near
+  full permanently.
 - **Disk capacity never reads `/`.** Under APFS the root is a sealed read-only snapshot reporting ~4%
   used regardless of the real state. Read the home directory's volume, and use
   `volumeAvailableCapacityForImportantUsage` so the number matches Finder.
@@ -85,7 +106,15 @@ On this M1, kernel core order is efficiency cores at indices 0–3 and performan
 four leftmost bars are E-cores.
 
 Adding a metric: sampler returning a `Sendable` value type in `Metrics/`, publish from `StatsStore`,
-view in `UI/`, compose into `MenuBarView`, extend `BarStyle`.
+add a case to `Widget` (title, symbol, summary) and a width to `BarStyle.width(of:coreCount:)`, a view
+in `UI/` wired into `MenuBarView.view(for:)`, and a hover panel in `WidgetPopoverView`. Existing users
+get the new widget enabled by default — `SettingsStore` appends cases missing from stored preferences
+rather than discarding the arrangement.
+
+The Settings window (`UI/SettingsWindowController.swift`) is a plain `NSWindow`, not SwiftUI's
+`Settings` scene: this is an `.accessory` app with no app menu to hang that scene off. Showing it
+needs `NSApp.activate(ignoringOtherApps:)` or it opens behind whatever the user is doing — the same
+reason the login-item alert does.
 
 ## Conventions
 

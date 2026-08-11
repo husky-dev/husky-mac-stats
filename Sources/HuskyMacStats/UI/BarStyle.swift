@@ -1,13 +1,13 @@
 import SwiftUI
 
-/// Shared geometry and colour ramp so the CPU and disk widgets read as one system.
+/// Shared geometry and colour ramp so every widget reads as one system.
 enum BarStyle {
     static let barWidth: CGFloat = 3
     static let barSpacing: CGFloat = 2
     static let barHeight: CGFloat = 14
     static let cornerRadius: CGFloat = 1.5
 
-    /// Gap between the CPU widget and the disk widget.
+    /// Gap between adjacent widgets.
     static let groupSpacing: CGFloat = 7
     static let iconWidth: CGFloat = 13
     /// Gap between a widget's glyph and its bars.
@@ -15,27 +15,52 @@ enum BarStyle {
     static let statusHeight: CGFloat = 22
     static let horizontalPadding: CGFloat = 5
 
-    /// Width of the disk widget: glyph, a small gap, and its fill bar.
-    static let diskWidth: CGFloat = iconWidth + iconGap + barWidth
-
-    static func cpuClusterWidth(coreCount: Int) -> CGFloat {
-        guard coreCount > 0 else { return 0 }
-        return CGFloat(coreCount) * barWidth + CGFloat(coreCount - 1) * barSpacing
+    /// Width of `count` bars laid out side by side.
+    static func clusterWidth(bars count: Int) -> CGFloat {
+        guard count > 0 else { return 0 }
+        return CGFloat(count) * barWidth + CGFloat(count - 1) * barSpacing
     }
 
-    /// Width of the CPU widget: chip glyph, a small gap, and one bar per core.
-    static func cpuWidth(coreCount: Int) -> CGFloat {
-        iconWidth + iconGap + cpuClusterWidth(coreCount: coreCount)
+    /// Every widget's width lives here, so the status item's total width and the hover hit-test
+    /// ranges are derived from one definition and cannot drift apart.
+    static func width(of widget: Widget, coreCount: Int) -> CGFloat {
+        let bars = switch widget {
+        case .cpu: coreCount          // one bar per logical core
+        case .memory, .disk: 1        // a single fill bar
+        case .network: 2              // down and up
+        }
+        return iconWidth + iconGap + clusterWidth(bars: bars)
     }
 
-    static func statusItemWidth(coreCount: Int) -> CGFloat {
-        horizontalPadding * 2 + cpuWidth(coreCount: coreCount) + groupSpacing + diskWidth
+    static func statusItemWidth(_ widgets: [Widget], coreCount: Int) -> CGFloat {
+        guard !widgets.isEmpty else { return horizontalPadding * 2 }
+
+        let content = widgets.reduce(0) { $0 + width(of: $1, coreCount: coreCount) }
+        let gaps = CGFloat(widgets.count - 1) * groupSpacing
+        return horizontalPadding * 2 + content + gaps
     }
 
-    /// X range the disk widget occupies inside the status item, used for hover hit-testing.
-    static func diskRange(coreCount: Int) -> ClosedRange<CGFloat> {
-        let start = horizontalPadding + cpuWidth(coreCount: coreCount) + groupSpacing
-        return start...(start + diskWidth)
+    /// X range `widget` occupies inside the status item, or nil when it isn't shown.
+    static func range(
+        of widget: Widget,
+        in widgets: [Widget],
+        coreCount: Int
+    ) -> ClosedRange<CGFloat>? {
+        var start = horizontalPadding
+
+        for candidate in widgets {
+            let end = start + width(of: candidate, coreCount: coreCount)
+            if candidate == widget { return start...end }
+            start = end + groupSpacing
+        }
+
+        return nil
+    }
+
+    /// Hover hit-test: which widget sits under `x`, if any. Points in the gaps between widgets and
+    /// in the outer padding belong to no widget.
+    static func widget(at x: CGFloat, in widgets: [Widget], coreCount: Int) -> Widget? {
+        widgets.first { range(of: $0, in: widgets, coreCount: coreCount)?.contains(x) == true }
     }
 
     /// Green below half, amber approaching full, red when saturated.

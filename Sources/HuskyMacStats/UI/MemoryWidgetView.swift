@@ -1,13 +1,13 @@
 import SwiftUI
 
-/// SSD glyph plus a vertical bar whose fill is the fraction of the volume in use.
-struct DiskWidgetView: View {
-    let usage: DiskUsage
+/// Memory glyph plus a vertical bar whose fill is the fraction of physical memory in use.
+struct MemoryWidgetView: View {
+    let usage: MemoryUsage
     let coreCount: Int
 
     var body: some View {
         HStack(spacing: BarStyle.iconGap) {
-            Image(systemName: Widget.disk.symbolName)
+            Image(systemName: Widget.memory.symbolName)
                 .font(.system(size: 11, weight: .regular))
                 .foregroundStyle(BarStyle.glyphColor)
                 .frame(width: BarStyle.iconWidth)
@@ -15,7 +15,7 @@ struct DiskWidgetView: View {
             LoadBar(fraction: usage.fractionUsed)
         }
         .frame(
-            width: BarStyle.width(of: .disk, coreCount: coreCount),
+            width: BarStyle.width(of: .memory, coreCount: coreCount),
             height: BarStyle.barHeight
         )
     }
