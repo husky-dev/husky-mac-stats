@@ -36,7 +36,7 @@ enum Widget: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .cpu: "One bar per logical core"
         case .memory: "Share of physical memory in use"
-        case .network: "Download and upload throughput"
+        case .network: "Upload and download speed"
         case .disk: "Space used on the home volume"
         }
     }

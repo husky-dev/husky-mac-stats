@@ -15,6 +15,15 @@ enum BarStyle {
     static let statusHeight: CGFloat = 22
     static let horizontalPadding: CGFloat = 5
 
+    /// Network is the one text widget: an arrow glyph per row, then the rate right-aligned in a
+    /// fixed column so the digits don't shift the layout as the rate changes magnitude.
+    static let networkArrowWidth: CGFloat = 7
+    static let networkRateWidth: CGFloat = 48
+    static var networkWidth: CGFloat { networkArrowWidth + iconGap + networkRateWidth }
+
+    /// Memory is a stacked "MEM" label over its percentage; wide enough for "100%".
+    static let memoryWidth: CGFloat = 28
+
     /// Width of `count` bars laid out side by side.
     static func clusterWidth(bars count: Int) -> CGFloat {
         guard count > 0 else { return 0 }
@@ -24,10 +33,16 @@ enum BarStyle {
     /// Every widget's width lives here, so the status item's total width and the hover hit-test
     /// ranges are derived from one definition and cannot drift apart.
     static func width(of widget: Widget, coreCount: Int) -> CGFloat {
+        // The text widgets have no bars, so they don't go through `clusterWidth`.
+        switch widget {
+        case .network: return networkWidth
+        case .memory: return memoryWidth
+        case .cpu, .disk: break
+        }
+
         let bars = switch widget {
         case .cpu: coreCount          // one bar per logical core
-        case .memory, .disk: 1        // a single fill bar
-        case .network: 2              // down and up
+        default: 1                    // a single fill bar
         }
         return iconWidth + iconGap + clusterWidth(bars: bars)
     }

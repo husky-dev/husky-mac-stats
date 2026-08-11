@@ -65,8 +65,16 @@ the *visible widget list*, not of `coreCount` alone: `statusItemWidth(_:coreCoun
 `range(of:in:coreCount:)` and the `widget(at:in:coreCount:)` hit-test all derive from the single
 `width(of:coreCount:)` switch, so total width and hit-test ranges cannot drift apart. **Register a new
 widget in the `Widget` enum and in `width(of:)` and everything else follows**; hardcoding a width
-anywhere else will open the popover over the wrong glyph. Widths are derived from `coreCount`, never
-hardcoded.
+anywhere else will open the popover over the wrong glyph. Bar widths are derived from `coreCount`,
+never hardcoded.
+
+Network and memory are the exceptions to the glyph-plus-bars shape: both draw two stacked text rows
+(`↑` rate over `↓` rate; `MEM` over a percentage) and take their widths from `BarStyle.networkWidth`
+and `BarStyle.memoryWidth` rather than from `clusterWidth`. Those still resolve through
+`width(of:coreCount:)`, so hit-testing stays correct. Their text columns are fixed width with
+monospaced digits on purpose — a self-sizing label would shift the layout every time a value gained
+a digit or crossed a unit boundary. They are also `statusHeight` tall, not `barHeight`: two rows do
+not fit in 14 pt.
 
 Because the status item's length is fixed at creation, `StatusItemController` subscribes to
 `SettingsStore` and reassigns `statusItem.length` whenever the user toggles or reorders — the SwiftUI

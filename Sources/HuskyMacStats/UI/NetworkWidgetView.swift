@@ -1,37 +1,50 @@
 import SwiftUI
 
-/// Transfer glyph plus two bars: download on the left, upload on the right.
+/// Two stacked rates: upload on top, download below, each trailed by its own arrow.
 struct NetworkWidgetView: View {
     let throughput: NetworkThroughput
     let coreCount: Int
 
-    /// Full-scale rate for the bars, ~12 MB/s — roughly a saturated 100 Mbit link.
-    private static let referenceBytesPerSecond: Double = 12_000_000
-
     var body: some View {
-        HStack(spacing: BarStyle.iconGap) {
-            Image(systemName: Widget.network.symbolName)
-                .font(.system(size: 11, weight: .regular))
-                .foregroundStyle(BarStyle.glyphColor)
-                .frame(width: BarStyle.iconWidth)
-
-            HStack(alignment: .bottom, spacing: BarStyle.barSpacing) {
-                LoadBar(fraction: Self.fraction(throughput.downBytesPerSecond))
-                LoadBar(fraction: Self.fraction(throughput.upBytesPerSecond))
-            }
+        VStack(alignment: .leading, spacing: 0) {
+            row(symbol: "arrow.up", rate: throughput.upBytesPerSecond)
+            row(symbol: "arrow.down", rate: throughput.downBytesPerSecond)
         }
         .frame(
             width: BarStyle.width(of: .network, coreCount: coreCount),
-            height: BarStyle.barHeight
+            height: BarStyle.statusHeight
         )
     }
 
-    /// Logarithmic, because throughput spans several orders of magnitude: on a linear scale the
-    /// everyday few-hundred-KB/s of traffic would sit invisibly close to zero.
-    static func fraction(_ bytesPerSecond: Double) -> Double {
-        guard bytesPerSecond > 0 else { return 0 }
+    private func row(symbol: String, rate bytesPerSecond: Double) -> some View {
+        HStack(spacing: BarStyle.iconGap) {
+            Text(Self.rate(bytesPerSecond))
+                .font(.system(size: 9))
+                .monospacedDigit()
+                .frame(width: BarStyle.networkRateWidth, alignment: .trailing)
 
-        let scaled = log10(1 + bytesPerSecond) / log10(1 + referenceBytesPerSecond)
-        return min(max(scaled, 0), 1)
+            Image(systemName: symbol)
+                .font(.system(size: 8, weight: .semibold))
+                .frame(width: BarStyle.networkArrowWidth)
+        }
+        .foregroundStyle(BarStyle.glyphColor)
+    }
+
+    /// Menu bar rates need a fixed shape: `ByteCountFormatter` prints "Zero KB" when idle and varies
+    /// its digit count, which would make the rows jitter inside a fixed-width status item. Decimal
+    /// units, matching the `.file` count style the popover uses, so the two agree.
+    static func rate(_ bytesPerSecond: Double) -> String {
+        switch bytesPerSecond {
+        case ..<1_000:
+            "0 KB/s"
+        case ..<1_000_000:
+            "\(Int((bytesPerSecond / 1_000).rounded())) KB/s"
+        case ..<10_000_000:
+            String(format: "%.1f MB/s", bytesPerSecond / 1_000_000)
+        case ..<1_000_000_000:
+            "\(Int((bytesPerSecond / 1_000_000).rounded())) MB/s"
+        default:
+            String(format: "%.1f GB/s", bytesPerSecond / 1_000_000_000)
+        }
     }
 }

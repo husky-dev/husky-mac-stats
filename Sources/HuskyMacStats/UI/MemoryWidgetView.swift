@@ -1,22 +1,23 @@
 import SwiftUI
 
-/// Memory glyph plus a vertical bar whose fill is the fraction of physical memory in use.
+/// A "MEM" label stacked over the share of physical memory in use.
 struct MemoryWidgetView: View {
     let usage: MemoryUsage
     let coreCount: Int
 
     var body: some View {
-        HStack(spacing: BarStyle.iconGap) {
-            Image(systemName: Widget.memory.symbolName)
-                .font(.system(size: 11, weight: .regular))
-                .foregroundStyle(BarStyle.glyphColor)
-                .frame(width: BarStyle.iconWidth)
+        VStack(spacing: 0) {
+            Text("MEM")
+                .font(.system(size: 8, weight: .semibold))
 
-            LoadBar(fraction: usage.fractionUsed)
+            Text("\(Int((usage.fractionUsed * 100).rounded()))%")
+                .font(.system(size: 9))
+                .monospacedDigit()
         }
+        .foregroundStyle(BarStyle.glyphColor)
         .frame(
             width: BarStyle.width(of: .memory, coreCount: coreCount),
-            height: BarStyle.barHeight
+            height: BarStyle.statusHeight
         )
     }
 }
