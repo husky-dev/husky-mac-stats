@@ -5,11 +5,14 @@ import Foundation
 @MainActor
 final class StatsStore: ObservableObject {
     @Published private(set) var cpuLoads: [Double]
+    @Published private(set) var memory: MemoryUsage = .unknown
+    @Published private(set) var network: NetworkThroughput = .zero
     @Published private(set) var disk: DiskUsage = .unknown
 
     let coreCount: Int
 
     private let cpu = CPUSampler()
+    private let net = NetworkSampler()
     private var timer: Timer?
     private var tick = 0
 
@@ -41,8 +44,10 @@ final class StatsStore: ObservableObject {
 
     private func tickNow() {
         // Reading the Mach counters is a microsecond-scale syscall, so it stays on the main actor —
-        // that keeps the sampler's tick history free of cross-actor state.
+        // that keeps each sampler's previous-reading state free of cross-actor concerns.
         cpuLoads = cpu.sample()
+        memory = MemorySampler.sample()
+        network = net.sample()
 
         tick += 1
         if tick % Self.diskTickInterval == 0 {
